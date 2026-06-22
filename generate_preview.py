@@ -1,43 +1,31 @@
 import os
 import glob
-import tarfile
-import tempfile
 import requests
 import fitz  # PyMuPDF
 import sys
 
 # Configuration
 WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
-API_URL = "https://latexonline.cc/data"
+API_URL = "https://texlive.net/cgi-bin/latexcgi"
 COMMAND = "pdflatex"
 
-def create_tarball():
-    fd, temp_path = tempfile.mkstemp(suffix=".tar.bz2")
-    os.close(fd)
+def compile_latex(target_tex_name):
+    print(f"Compiling {target_tex_name} via texlive.net...")
     
-    with tarfile.open(temp_path, "w:bz2") as tar:
-        for item in os.listdir(WORKSPACE_DIR):
-            item_path = os.path.join(WORKSPACE_DIR, item)
-            # Avoid adding git history or cache folders to save bandwidth
-            if item in ['.git', '__pycache__'] or item.endswith('.pdf') or item.endswith('.png') or item.endswith('.tar.bz2'):
-                continue
-            tar.add(item_path, arcname=item)
-            
-    return temp_path
+    tex_file_path = os.path.join(WORKSPACE_DIR, target_tex_name)
+    with open(tex_file_path, 'r', encoding='utf-8') as f:
+        tex_content = f.read()
 
-def compile_latex(target_tex_name, tarball_path):
-    print(f"Compiling {target_tex_name} via latexonline.cc...")
-    params = {
-        'target': target_tex_name,
-        'command': COMMAND,
-        'force': 'true'
+    files = {
+        'filecontents[]': ('document.tex', tex_content),
+        'filename[]': (None, 'document.tex'),
+        'engine': (None, COMMAND),
+        'return': (None, 'pdf')
     }
-    with open(tarball_path, 'rb') as f:
-        files = {'file': f}
-        # Allow redirects as latexonline uses 301/302 redirects
-        response = requests.post(API_URL, params=params, files=files, allow_redirects=True)
     
-    if response.status_code == 200:
+    response = requests.post(API_URL, files=files)
+    
+    if response.status_code == 200 and response.content.startswith(b'%PDF'):
         pdf_path = os.path.join(WORKSPACE_DIR, target_tex_name.replace('.tex', '.pdf'))
         with open(pdf_path, 'wb') as f:
             f.write(response.content)
@@ -45,7 +33,7 @@ def compile_latex(target_tex_name, tarball_path):
         return pdf_path
     else:
         print(f"Error compiling {target_tex_name}: HTTP {response.status_code}")
-        print(response.text)
+        print(response.text[:500])
         return None
 
 def convert_pdf_to_png(pdf_path):
@@ -112,25 +100,21 @@ def main():
 
     print(f"Found {len(tex_files)} LaTeX files to compile.")
     
-    tarball_path = create_tarball()
     compiled_results = {}
     
-    try:
-        for tex_file in tex_files:
-            tex_name = os.path.basename(tex_file)
-            pdf_path = compile_latex(tex_name, tarball_path)
-            if pdf_path:
-                png_paths = convert_pdf_to_png(pdf_path)
-                if png_paths:
-                    compiled_results[tex_file] = png_paths
-    finally:
-        if os.path.exists(tarball_path):
-            os.remove(tarball_path)
+    for tex_file in tex_files:
+        tex_name = os.path.basename(tex_file)
+        pdf_path = compile_latex(tex_name)
+        if pdf_path:
+            png_paths = convert_pdf_to_png(pdf_path)
+            if png_paths:
+                compiled_results[tex_file] = png_paths
             
     if compiled_results:
         generate_readme(compiled_results)
     else:
         print("No previews generated successfully.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
