@@ -6,5 +6,7 @@ This repository contains my LaTeX resume. The preview below is automatically gen
 
 📄 **[Download PDF](android.pdf)**
 
-![Resume Preview](android.png)
+![Resume Preview](android-page1.png)
+
+![Resume Preview](android-page2.png)
 
